@@ -7,7 +7,7 @@ load_dotenv()
 
 class Settings(BaseSettings):
     TIMESCALE_DB_PASSWORD: str = os.getenv("TIMESCALE_DB_PASSWORD")
-    DATABASE_URL: str = os.getenv("DATABASE_URL")
+    DATABASE_URL: str = os.getenv("HOST")
     SECRET_KEY: str = os.getenv("SECRET_KEY")
 
     class Config:
@@ -19,3 +19,5 @@ settings = Settings()
 settings.DATABASE_URL = settings.DATABASE_URL.replace(
     "@", f":{settings.TIMESCALE_DB_PASSWORD}@"
 )
+
+print(settings.DATABASE_URL)
