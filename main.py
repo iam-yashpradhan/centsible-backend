@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException, Depends, Request, Path
+from fastapi import FastAPI, HTTPException, Depends, Request, Path, Query
 import psycopg2
+from psycopg2.extras import RealDictCursor
 from pydantic import BaseModel
 from typing import Optional
 import os
@@ -102,6 +103,87 @@ def get_users(db_conn=Depends(get_db_connection)):
     cursor.close()
     db_conn.close()
     return users
+
+@app.get('/transactions')
+def get_transactions(
+    user_id: Optional[int] = Query(None),
+    merchant_id: Optional[int] = Query(None),
+    db_conn=Depends(get_db_connection)
+):
+    cursor = db_conn.cursor(cursor_factory=RealDictCursor)
+
+    if not user_id and not merchant_id:
+        raise HTTPException(status_code=400, detail="Either user_id or merchant_id must be provided")
+
+    if user_id:
+        cursor.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
+        user = cursor.fetchone()
+        
+        if not user:
+            db_conn.close()
+            raise HTTPException(status_code=404, detail="User not found")
+
+        cursor.execute("""
+            SELECT transaction_id, amount, status, created_at, description 
+            FROM transactions 
+            WHERE user_id = %s 
+            ORDER BY created_at DESC
+            """, (user_id,))
+        
+        transactions = cursor.fetchall()
+
+        if not transactions:
+            raise HTTPException(status_code=404, detail="No transactions found for this user")
+
+        response = {
+            "entity": "user",
+            "details": {
+                "user_id": user["user_id"],
+                "username": user["username"],
+                "email": user["email"],
+                "balance": str(user["balance"]),
+                "created_at": str(user["created_at"])
+            },
+            "transactions": transactions
+        }
+
+    
+    elif merchant_id:
+        cursor.execute("SELECT * FROM merchants WHERE merchant_id = %s", (merchant_id,))
+        merchant = cursor.fetchone()
+        
+        if not merchant:
+            db_conn.close()
+            raise HTTPException(status_code=404, detail="Merchant not found")
+
+        cursor.execute("""
+            SELECT transaction_id, amount, status, created_at, description 
+            FROM transactions 
+            WHERE merchant_id = %s 
+            ORDER BY created_at DESC
+            """, (merchant_id,))
+        
+        transactions = cursor.fetchall()
+
+        if not transactions:
+            raise HTTPException(status_code=404, detail="No transactions found for this merchant")
+
+        response = {
+            "entity": "merchant",
+            "details": {
+                "merchant_id": merchant["merchant_id"],
+                "merchant_name": merchant["merchant_name"],
+                "email": merchant["email"],
+                "balance": str(merchant["balance"]),
+                "created_at": str(merchant["created_at"])
+            },
+            "transactions": transactions
+        }
+
+    cursor.close()
+    db_conn.close()
+
+    return response
 
 @app.post('/merchantCredit')
 def credit_user_balance(credit_request: CreditRequest, db_conn=Depends(get_db_connection)):
