@@ -9,16 +9,32 @@ from pydantic import BaseModel
 from typing import Optional
 from decimal import Decimal
 from datetime import datetime
+from fastapi.middleware.cors import CORSMiddleware
+
 
 load_dotenv()
 
 app = FastAPI()
 
+origins = [
+    "http://localhost:3000",  # React frontend running on this origin
+    # You can add more origins here, or use "*" to allow all origins (not recommended for production)
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # List of allowed origins
+    allow_credentials=True,  # Whether or not to allow credentials (cookies, etc.)
+    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, PUT, etc.)
+    allow_headers=["*"],  # Allow all headers (you can restrict this if necessary)
+)
+
+
 class CreditRequest(BaseModel):
     merchant_id: int
     user_id: int
     amount: float
-    description: Optional[str] = None
+   
 
 class User(BaseModel):
     username: str
@@ -95,14 +111,31 @@ def get_user_data(user_id: int = Path(..., title="The ID of the user to retrieve
     
     
 
-@app.get('/merchants')
-def get_users(db_conn=Depends(get_db_connection)):
-    cursor = db_conn.cursor()
-    cursor.execute("SELECT * FROM merchants")
-    users = cursor.fetchall()
-    cursor.close()
-    db_conn.close()
-    return users
+@app.get('/merchants/{merchant_id}')
+def get_merchant_data(merchant_id: int = Path(..., title="The ID of the user to retrieve"), db_conn=Depends(get_db_connection)):
+    try:
+        print(merchant_id)
+        cursor = db_conn.cursor()
+        cursor.execute("SELECT * FROM merchants WHERE merchant_id = %s", (merchant_id,))
+        merchant_data = cursor.fetchone()
+        print(merchant_data)
+        if merchant_data:
+            merchant = {
+                "merchant_id": merchant_data[0],
+                "merchant_name": merchant_data[1],
+                "email": merchant_data[2],
+                "phone": merchant_data[3],
+                "balance": merchant_data[4],
+                "created_at": merchant_data[5]
+            }
+            return merchant
+        else:
+            raise HTTPException(status_code=404, detail="Merchant not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to retrieve user: " + str(e))
+    finally:
+        cursor.close()
+        db_conn.close()
 
 @app.get('/transactions')
 def get_transactions(
@@ -221,9 +254,9 @@ def credit_user_balance(credit_request: CreditRequest, db_conn=Depends(get_db_co
 
     
     cursor.execute("""
-        INSERT INTO transactions (merchant_id, user_id, amount, status, description)
-        VALUES (%s, %s, %s, 'completed', %s)
-        """, (credit_request.merchant_id, credit_request.user_id, amount_decimal, credit_request.description))
+        INSERT INTO transactions (merchant_id, user_id, amount, status)
+        VALUES (%s, %s, %s, 'completed')
+        """, (credit_request.merchant_id, credit_request.user_id, amount_decimal))
 
     db_conn.commit()
 
